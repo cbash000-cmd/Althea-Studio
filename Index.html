@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>ALTHEA Studio - Full Helm</title>
+<style>
+body{margin:0;font-family:system-ui,-apple-system;background:#0e0e11;color:#eaeaea;overflow-x:hidden;}
+.panel{padding:14px;border-bottom:1px solid #222;}
+h2{margin:0 0 8px 0;font-size:14px;color:#9aa4ff;text-transform:uppercase;letter-spacing:1px;}
+button,input,select{width:100%;margin-top:6px;padding:12px;background:#1c1c22;border:1px solid #333;color:white;border-radius:8px;display:block;outline:none;}
+label{margin-top:10px;display:block;font-size:12px;color:#888;}
+canvas{width:100%;height:220px;background:black;border-radius:10px;cursor:pointer;margin-top:10px;border:1px solid #222;transition: all 0.4s ease;}
+#splash {position: fixed; inset:0; z-index:9999; background:#0e0e11; display:flex; align-items:center; justify-content:center; transition: opacity 1s ease;}
+.avatar-ring{width:280px;height:280px;border-radius:50%;border:1px solid rgba(154,164,255,0.2);overflow:hidden;}
+.avatar-ring img{width:100%;height:100%;object-fit:cover;}
+#tapOverlay{position:fixed;inset:0;background:rgba(0,0,0,0.9);color:#9aa4ff;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:9998;text-align:center;}
+.color-container{display:flex;gap:8px;margin-top:10px;}
+.color-item{flex:1;text-align:center;font-size:10px;}
+.color-item input[type="color"]{height:40px;padding:2px;border:none;background:none;}
+.hidden-ui{display:none !important;}
+.fullscreen-canvas{position:fixed !important; top:0; left:0; width:100vw !important; height:100vh !important; z-index:10000; border-radius:0 !important; margin:0 !important;}
+#progressCont {display:none; margin-top:15px; background:#1c1c22; height:8px; border-radius:4px; overflow:hidden; border:1px solid #333;}
+#progressBar {width:0%; height:100%; background:#9aa4ff; transition: width 0.1s linear;}
+</style>
+</head>
+<body>
+
+<div id="splash"><div class="avatar-ring"><img src="splash.JPG" alt="Althena"></div></div>
+
+<div id="tapOverlay">
+  <h1 style="font-weight:100; letter-spacing:8px;">READY</h1>
+  <button onclick="wakeEngine()" style="background:#9aa4ff;color:#000;font-weight:bold;padding:15px 40px;border:none;border-radius:10px;">WAKE SYSTEM</button>
+</div>
+
+<div class="ui-el panel"><h2>🎵 ALTHEA STUDIO</h2>Mobile Edition</div>
+
+<div class="ui-el panel">
+  <h2>AUDIO (MP3/M4A)</h2>
+  <input type="file" id="audioPick" accept=".mp3,.m4a,audio/*">
+  <audio id="audio" controls style="width:100%; margin-top:10px;" crossorigin="anonymous"></audio>
+</div>
+
+<div class="ui-el panel">
+  <h2>STATIC IMAGE</h2>
+  <input type="file" id="staticImgPick" accept="image/*">
+</div>
+
+<div class="ui-el panel">
+  <h2>OVERLAY MODE</h2>
+  <select id="overlayMode">
+    <option value="radial" selected>Radial Bars</option>
+    <option value="bars">Bars</option>
+    <option value="circle">Circle</option>
+    <option value="waveform">Waveform</option>
+    <option value="particles">Particles</option>
+    <option value="mirror">Mirror</option>
+  </select>
+
+  <div class="color-container">
+    <div class="color-item"><input type="color" id="visColor1" value="#9aa4ff"><span>Primary</span></div>
+    <div class="color-item"><input type="color" id="visColor2" value="#ff5599"><span>Secondary</span></div>
+    <div class="color-item"><input type="color" id="visColor3" value="#55ff99"><span>Accent</span></div>
+  </div>
+
+  <label>Memory Presets:</label>
+  <div style="display:flex; gap:5px;">
+    <select id="presetSelect" style="flex:1;"><option value="">Presets...</option></select>
+    <button onclick="savePreset()" style="width:70px;margin:0;background:#2ecc71;">SAVE</button>
+  </div>
+
+  <label>Overlay Image:</label>
+  <input type="file" id="overlayImgPick" accept="image/*">
+  <label>Overlay Opacity:</label>
+  <input type="range" id="ovOpacity" min="0" max="1" step="0.1" value="1">
+  <label>Intensity:</label>
+  <input type="range" id="visIntensity" min="0.5" max="3" step="0.1" value="1.2">
+</div>
+
+<div class="ui-el panel">
+  <label>Export Quality:</label>
+  <select id="exportRes">
+    <option value="auto">Auto (Screen)</option>
+    <option value="720p">720p (HD)</option>
+    <option value="1080p" selected>1080p (Full HD)</option>
+    <option value="4k">4K (Ultra HD)</option>
+  </select>
+  
+  <div id="progressCont">
+    <div id="progressBar"></div>
+  </div>
+
+  <button id="recordBtn" style="background:#9aa4ff;color:black;font-weight:bold;margin-top:10px;">▶ PLAY & RECORD</button>
+  <button onclick="toggleLock()" style="margin-top:10px;background:#333;font-size:11px;">⛶ FULLSCREEN PREVIEW</button>
+</div>
+
+<div class="panel" style="border:none;">
+  <canvas id="canvas" onclick="tapUnlock()"></canvas>
+  <div id="status" style="font-size:10px;margin-top:5px;color:#444;text-align:center;">Status: Standby</div>
+</div>
+
+<script>
+const audio = document.getElementById("audio");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+let audioCtx, analyser, dataArray, source, bgImg, ovImg, particles=[], isLocked=false;
+let mediaRecorder, recordedChunks=[], wmX=30, wmY=30, wmDX=1.5, wmDY=1.5;
+
+// Presets
+let presets = JSON.parse(localStorage.getItem('althea_presets') || '{}');
+function refreshPresets() {
+  const sel=document.getElementById("presetSelect");
+  sel.innerHTML='<option value="">Load Preset...</option>';
+  Object.keys(presets).forEach(n=>{ let o=document.createElement('option'); o.value=n; o.innerText=n; sel.appendChild(o); });
+}
+function savePreset() {
+  const name=prompt("Name your preset:");
+  if(!name)return;
+  presets[name]={ c1: document.getElementById("visColor1").value, c2: document.getElementById("visColor2").value, mode: document.getElementById("overlayMode").value };
+  localStorage.setItem('althea_presets', JSON.stringify(presets));
+  refreshPresets();
+}
+document.getElementById("presetSelect").onchange=e=>{
+  const p=presets[e.target.value];
+  if(p){ document.getElementById("visColor1").value=p.c1; document.getElementById("visColor2").value=p.c2; document.getElementById("overlayMode").value=p.mode; }
+};
+
+window.addEventListener('load', ()=>{
+  setTimeout(()=>{ document.getElementById("splash").style.opacity=0;
+    setTimeout(()=>{ document.getElementById("splash").style.display="none"; document.getElementById("tapOverlay").style.display="flex"; },1000);
+  },2000);
+});
+
+function resizeCanvas(){
+  if (mediaRecorder && mediaRecorder.state === "recording") return;
+  canvas.width = isLocked ? window.innerWidth : canvas.clientWidth;
+  canvas.height = isLocked ? window.innerHeight : 220;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function initAudio(){
+  if(!audioCtx){
+    audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    analyser=audioCtx.createAnalyser();
+    analyser.fftSize=256;
+    dataArray=new Uint8Array(analyser.frequencyBinCount);
+  }
+}
+
+async function wakeEngine(){
+  initAudio();
+  if(audioCtx.state==='suspended') await audioCtx.resume();
+  const osc=audioCtx.createOscillator();
+  osc.connect(audioCtx.destination);
+  osc.start(0); osc.stop(0.1);
+  document.getElementById("tapOverlay").style.display="none";
+  draw();
+}
+
+function connectSource(){
+  if(source) source.disconnect();
+  source=audioCtx.createMediaElementSource(audio);
+  source.connect(analyser);
+  analyser.connect(audioCtx.destination);
+}
+
+document.getElementById("audioPick").onchange=e=>{
+  const file=e.target.files[0];
+  if(!file)return;
+  initAudio();
+  audio.src=URL.createObjectURL(file);
+  audio.oncanplay=()=>{ connectSource(); document.getElementById("status").innerText="Status: "+file.name; };
+};
+document.getElementById("staticImgPick").onchange=e=>{ const img=new Image(); img.src=URL.createObjectURL(e.target.files[0]); img.onload=()=>bgImg=img; };
+document.getElementById("overlayImgPick").onchange=e=>{ const img=new Image(); img.src=URL.createObjectURL(e.target.files[0]); img.onload=()=>ovImg=img; };
+
+function toggleLock(){
+  isLocked=!isLocked;
+  canvas.classList.toggle('fullscreen-canvas');
+  document.querySelectorAll('.ui-el').forEach(el=>el.style.display=isLocked?'none':'block');
+  resizeCanvas();
+}
+function tapUnlock(){ if(isLocked) toggleLock(); }
+
+// --- ADVANCED RECORDING ENGINE ---
+document.getElementById("recordBtn").onclick = () => {
+  const btn = document.getElementById("recordBtn");
+  const res = document.getElementById("exportRes").value;
+  const pCont = document.getElementById("progressCont");
+  const pBar = document.getElementById("progressBar");
+
+  if (btn.innerText.includes("PLAY")) {
+    recordedChunks = [];
+    const origW = canvas.width, origH = canvas.height;
+    pCont.style.display = "block";
+
+    if(res === "720p"){ canvas.width = 1280; canvas.height = 720; }
+    else if(res === "1080p"){ canvas.width = 1920; canvas.height = 1080; }
+    else if(res === "4k"){ canvas.width = 3840; canvas.height = 2160; }
+
+    const stream = canvas.captureStream(30);
+    try {
+      const dest = audioCtx.createMediaStreamDestination();
+      source.connect(dest);
+      stream.addTrack(dest.stream.getAudioTracks()[0]);
+    } catch(e) {}
+
+    const mime = MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E"') ? 'video/mp4; codecs="avc1.42E01E"' : 'video/webm';
+    mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: res==="4k"?30000000:8000000 });
+
+    const trackProg = () => {
+      if(mediaRecorder.state === "recording"){
+        pBar.style.width = ((audio.currentTime / audio.duration) * 100) + "%";
+        requestAnimationFrame(trackProg);
+      }
+    };
+
+    mediaRecorder.ondataavailable = e => { if(e.data.size > 0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      btn.innerText = "⏳ EXPORTING...";
+      const blob = new Blob(recordedChunks, { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `ALTHEA_${res}_${Date.now()}.${mime.includes('mp4')?'mp4':'webm'}`;
+      a.click();
+      canvas.width = origW; canvas.height = origH;
+      pCont.style.display = "none";
+      setTimeout(() => { btn.innerText = "▶ PLAY & RECORD"; btn.style.background = "#9aa4ff"; }, 2000);
+    };
+
+    mediaRecorder.start(); audio.play(); trackProg();
+    btn.innerText = "■ STOP & EXPORT"; btn.style.background = "#ff5599";
+    audio.onended = () => { if(mediaRecorder.state === "recording") mediaRecorder.stop(); };
+  } else {
+    mediaRecorder.stop(); audio.pause();
+  }
+};
+
+function draw() {
+  requestAnimationFrame(draw);
+  if (!analyser) return;
+  analyser.getByteFrequencyData(dataArray);
+  const intense = parseFloat(document.getElementById("visIntensity").value);
+  const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+
+  ctx.globalCompositeOperation = "source-over";
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (bgImg) {
+    const s = 1 + (avg / 600);
+    ctx.drawImage(bgImg, (canvas.width - canvas.width * s) / 2, (canvas.height - canvas.height * s) / 2, canvas.width * s, canvas.height * s);
+  }
+
+  const mode = document.getElementById("overlayMode").value;
+  const colors = [document.getElementById("visColor1").value, document.getElementById("visColor2").value, document.getElementById("visColor3").value];
+
+  if (mode === "radial") {
+    const r = (canvas.height/4) + (avg * intense);
+    for (let i = 0; i < dataArray.length; i++) {
+      const angle = (i / dataArray.length) * Math.PI * 2;
+      ctx.strokeStyle = colors[i % 3];
+      ctx.beginPath();
+      ctx.moveTo(canvas.width / 2 + Math.cos(angle) * r, canvas.height / 2 + Math.sin(angle) * r);
+      ctx.lineTo(canvas.width / 2 + Math.cos(angle) * (r + dataArray[i] * intense), canvas.height / 2 + Math.sin(angle) * (r + dataArray[i] * intense));
+      ctx.stroke();
+    }
+  } else if (mode === "bars") {
+    const bw = canvas.width / dataArray.length;
+    for (let i = 0; i < dataArray.length; i++) {
+      const h = (dataArray[i] / 255) * canvas.height * intense;
+      ctx.fillStyle = colors[i % 3];
+      ctx.fillRect(i * bw, canvas.height - h, bw - 1, h);
+    }
+  } else if (mode === "circle") {
+    ctx.strokeStyle = colors[0]; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(canvas.width / 2, canvas.height / 2, 50 + avg * intense, 0, Math.PI * 2); ctx.stroke();
+  } else if (mode === "waveform") {
+    ctx.strokeStyle = colors[1]; ctx.beginPath();
+    const sx = canvas.width / dataArray.length;
+    for (let i = 0; i < dataArray.length; i++) {
+      const y = canvas.height / 2 - (dataArray[i] / 255) * (canvas.height / 2) * intense;
+      i === 0 ? ctx.moveTo(0, y) : ctx.lineTo(i * sx, y);
+    }
+    ctx.stroke();
+  } else if (mode === "mirror") {
+    const step = canvas.width / (dataArray.length / 2);
+    for (let i = 0; i < dataArray.length / 2; i++) {
+      const h = (dataArray[i] / 255) * canvas.height * intense;
+      ctx.fillStyle = colors[i % 3];
+      ctx.fillRect(i * step, canvas.height / 2 - h / 2, step - 2, h);
+      ctx.fillRect(canvas.width - i * step - step, canvas.height / 2 - h / 2, step - 2, h);
+    }
+  } else if (mode === "particles") {
+    if (particles.length < 100 && avg > 20) {
+      particles.push({ x: Math.random() * canvas.width, y: canvas.height, s: Math.random() * 5 + 1, v: Math.random() * 2 + 1, c: colors[Math.floor(Math.random()*3)] });
+    }
+    for (let i = particles.length - 1; i >= 0; i--) {
+      let p = particles[i]; p.y -= p.v * (avg / 10); ctx.fillStyle = p.c;
+      ctx.fillRect(p.x, p.y, p.s, p.s);
+      if (p.y < -10) particles.splice(i, 1);
+    }
+  }
+
+  if (ovImg) { ctx.globalAlpha = parseFloat(document.getElementById("ovOpacity").value); ctx.globalCompositeOperation = "screen"; ctx.drawImage(ovImg, 0, 0, canvas.width, canvas.height); ctx.globalAlpha = 1.0; }
+
+  ctx.save();
+  const pulse = 1 + (avg / 100); ctx.globalAlpha = 0.4; ctx.fillStyle = "#fff";
+  ctx.font = `bold ${Math.floor(20 * pulse)}px sans-serif`;
+  if (wmX + 220 > canvas.width || wmX < 0) wmDX = -wmDX;
+  if (wmY > canvas.height || wmY < 20) wmDY = -wmDY;
+  wmX += wmDX; wmY += wmDY;
+  ctx.fillText("ALTHEA STUDIO FREE", wmX, wmY);
+  ctx.restore();
+}
+refreshPresets();
+</script>
+</body>
+</html>
