@@ -1,5 +1,6 @@
 ALTHEA Studio - Free Edition
 
+
 ALTHEA Studio is a mobile-friendly web application designed for real-time music visualization and recording. It lets users create visually stunning videos from their music, featuring multiple overlay modes, customizable colors, and high-resolution export options. This free edition is ideal for experimenting, sharing, or learning how music visualization works on the web.
 
 Features
